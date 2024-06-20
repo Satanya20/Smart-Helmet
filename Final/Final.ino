@@ -1,26 +1,33 @@
-#include <Wire.h>
+#include <TinyGPS++.h>
 #include <SoftwareSerial.h>
+#include <Wire.h>
 
-// GSM module phone number
-const char* remoteNumber = "+94772244484";
+// Define the GPS and GSM pins
+SoftwareSerial SIM900A(10, 11); // RX, TX for GSM
+SoftwareSerial ss(4, 3); // RX, TX for GPS
 
-// Initialize SoftwareSerial for GSM module
-SoftwareSerial SIM900A(10, 11); // RX, TX
+// Create a TinyGPS++ object
+TinyGPSPlus gps;
 
 // Pin definitions
 const int forcePin = A4; // Force sensor pin
 const int vibrationPin = A1; // Vibration sensor pin
 
 // Threshold value to determine if helmet is worn
-const int forceThreshold = 100;
+const int forceThreshold = 900;
+
+unsigned long startTime = 0; // Time when the high vibration started
+const unsigned long requiredDuration = 2000; // Duration in milliseconds for continuous high reading (2 seconds)
+bool highReadingDetected = false; // Flag to indicate if the high reading is being detected
+
+const char* remoteNumber = "+94759073291"; // Phone number to send SMS
 
 void setup() {
   Serial.begin(9600);
   SIM900A.begin(9600);
+  ss.begin(9600);
 
-  Wire.begin();
-  // Initialize vibration sensor pin
-  pinMode(vibrationPin, INPUT);
+  Serial.println(F("GPS and GSM Module Example"));
 }
 
 void loop() {
@@ -33,26 +40,50 @@ void loop() {
     // Check vibration sensor for confirmation of accident
     int vibrationLevel = analogRead(vibrationPin); // Read the analog value from the vibration sensor
 
-  // Print the vibration level to the serial monitor
-    Serial.print("Vibration Level: ");
-    Serial.println(vibrationLevel);
+    if (vibrationLevel > 512) { // Adjust the threshold value as needed
+      if (!highReadingDetected) {
+        // If high reading was not previously detected, start the timer
+        highReadingDetected = true;
+        startTime = millis();
+      } else {
+        // If high reading was already detected, check the duration
+        if (millis() - startTime >= requiredDuration) {
+          Serial.println("Accident confirmed by vibration sensor");
 
-    if (vibrationLevel > 100 ) {
-      Serial.println("Accident confirmed by vibration sensor");
+          // Fetch GPS location
+          while (ss.available() > 0) {
+            gps.encode(ss.read());
+            if (gps.location.isUpdated()) {
+              float latitude = gps.location.lat();
+              float longitude = gps.location.lng();
+              Serial.print("Latitude: ");
+              Serial.println(latitude, 6);
+              Serial.print("Longitude: ");
+              Serial.println(longitude, 6);
 
-      // Send a call via GSM module
-      sendCall(remoteNumber);
+              // Send a call via GSM module
+              sendCall(remoteNumber);
 
-      // Add a delay to prevent multiple calls
-      delay(10000); // 10 seconds delay
-      sendSMS(remoteNumber, "Accident detected. Please send help.");
+              // Add a delay to prevent multiple calls
+              delay(10000); // 10 seconds delay
+
+              // Send SMS with location
+              char message[160];
+              snprintf(message, sizeof(message), "Accident detected. Please send help.\nLocation:\nLatitude: %.6f\nLongitude: %.6f", latitude, longitude);
+              sendSMS(remoteNumber, message);
+
+              // Small delay to prevent serial output flooding
+              delay(500);
+            }
+          }
+        }
+      }
+    } else {
+      // Reset if the reading goes below the threshold
+      highReadingDetected = false;
+      Serial.println("Helmet is not being worn");
     }
-  } else {
-    Serial.println("Helmet is not being worn");
   }
-
-  // Small delay to prevent serial output flooding
-  delay(500);
 }
 
 void sendCall(const char* number) {
@@ -63,7 +94,7 @@ void sendCall(const char* number) {
   if (waitForResponse("RING") || waitForResponse("NO CARRIER")) {
     Serial.println("Call initiated...");
   } else {
-    Serial.println("Call failed!");
+    Serial.println("Call Connected...");
   }
 
   // Wait for call to end (replace with logic for call duration control if needed)
