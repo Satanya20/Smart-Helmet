@@ -15,7 +15,7 @@ This project presents a Smart Helmet System designed to enhance the safety of mo
   - SIM900A GSM/GPRS Module
   - FSR Sensor (Force Sensitive Resistor)
   - Vibration Sensor
-  - GPS Module (optional for location tracking)
+  - GPS Module (for location tracking)
 
 ## Key Features
 #### Helmet Wear Detection
